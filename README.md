@@ -34,16 +34,16 @@ This project provides a hands-on introduction to:
 make
 
 ./ircserv <port> <password>
-```
+
 Example:
-```bash
+
 ./ircserv 6667 secret_password
-```
+
 Then connect using an IRC client:
-```bash
+
 /quote PASS secret_password
-/NICK ur_name
-/USER ur_name 0 * :ur_name
+/NICK mohamed
+/USER mohamed 0 * :Mohamed
 Project Objectives
-```
+
 The purpose of ft_irc is not only to build a chat server, but also to gain a deeper understanding of networking concepts and how internet protocols are designed and implemented. By recreating a simplified IRC server, this project demonstrates how modern communication systems manage users, channels, commands, and concurrent network connections.
