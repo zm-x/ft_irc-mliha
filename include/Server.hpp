@@ -24,6 +24,9 @@ public:
 	void initSocket();
 	void run();
 	void stop();
+	int PASS_command(Client &c, std::string &param, int fd);
+	int NICK_command(Client &c, std::string &param, int fd);
+	int PING_command(Client &c, std::string &param, int fd);
 
 private:
 	void handlePollEvent(size_t i);

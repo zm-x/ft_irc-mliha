@@ -11,6 +11,22 @@ void Client::appendToInBuffer(const std::string& data) {
 	_inBuffer += data;
 }
 
+bool Client::isPasswordAccepted() const {
+    return _passwordAccepted;
+}
+
+void Client::setNickname(const std::string& nick) {
+    _nickname = nick;
+}
+
+std::string Client::getNickname() const {
+    return _nickname;
+}
+
+void Client::setPasswordAccepted(bool value) {
+    _passwordAccepted = value;
+}
+
 bool Client::popOneLine(std::string& line) {
 	size_t pos = _inBuffer.find("\r\n");
 	if (pos == std::string::npos)

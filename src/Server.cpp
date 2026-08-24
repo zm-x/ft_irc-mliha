@@ -100,10 +100,66 @@ void Server::acceptNewClients() {
 	}
 }
 
-void Server::receiveFromClient(int fd) {
+int Server::PASS_command(Client &c, std::string &param, int fd)
+{
+	if (param.empty())
+	{
+		c.queueMessage(":server 461 PASS :Not enough parameters\r\n");
+		updatePollOutEvent(fd, true);
+		return 1;
+	}
+	if (param == _password)
+		c.setPasswordAccepted(true);
+	else
+	{
+		c.setPasswordAccepted(false);
+		c.queueMessage(":server 464 :Password incorrect\r\n");
+		updatePollOutEvent(fd, true);
+		return 0;
+	}
+	return 1;
+}
+
+int Server::NICK_command(Client &c, std::string &param, int fd)
+{
+	if (param.empty())
+	{
+		c.queueMessage(":server 431 NICK :No nickname given\r\n");
+		updatePollOutEvent(fd, true);
+		return 1;
+	}
+	for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
+	{
+   		if (it->first != fd && it->second.getNickname() == param)
+		{
+       		c.queueMessage(":server 433 * " + param + " :Nickname is already in use\r\n");
+       		updatePollOutEvent(fd, true);
+       		return 1;
+   		}
+	}
+	c.setNickname(param);
+	return 1;
+}
+
+int Server::PING_command(Client &c, std::string &param, int fd)
+{
+	if (param.empty()) 
+	{
+    	c.queueMessage(":server 409 :No origin specified\r\n");
+    	updatePollOutEvent(fd, true);
+    	return 1;
+   	}
+    c.queueMessage("PONG " + param + "\r\n");
+    updatePollOutEvent(fd, true);
+    return 1;
+}
+
+void Server::receiveFromClient(int fd)
+{
 	char buffer[512];
 	ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
-	if (n <= 0) {
+	if (n <= 0)
+	{
 		if (n == 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
 			disconnectClient(fd);
 		return;
@@ -112,11 +168,27 @@ void Server::receiveFromClient(int fd) {
 	c.appendToInBuffer(std::string(buffer, n));
 
 	std::string line;
-	while (c.popOneLine(line)) {
-		std::cout << "[fd " << fd << "] line: " << line << std::endl;
-		// temporary echo for transport testing
-		c.queueMessage("You said: " + line + "\r\n");
-		updatePollOutEvent(fd, true);
+	while (c.popOneLine(line)) 
+	{
+		int SpacePos = line.find(' ');
+		std::string param;
+		std::string cmd;
+		int return_value;
+		if (SpacePos != std::string::npos)
+		{
+			param = line.substr(SpacePos + 1);
+			cmd = line.substr(0, SpacePos);
+		}
+		if (cmd.empty())
+			continue;
+		if (cmd == "PASS")
+			return_value = PASS_command(c, param, fd);
+		else if (cmd == "NICK")
+			return_value = NICK_command(c, param, fd);
+		else if (cmd == "PING")
+			return_value = PING_command(c, param, fd);
+		if (!return_value)
+			return;
 	}
 }
 
