@@ -1,4 +1,4 @@
-#include "Server.hpp"
+#include "../includes/Server.hpp"
 #include <stdexcept>
 #include <iostream>
 #include <cstdlib>
@@ -100,60 +100,6 @@ void Server::acceptNewClients() {
 	}
 }
 
-int Server::PASS_command(Client &c, std::string &param, int fd)
-{
-	if (param.empty())
-	{
-		c.queueMessage(":server 461 PASS :Not enough parameters\r\n");
-		updatePollOutEvent(fd, true);
-		return 1;
-	}
-	if (param == _password)
-		c.setPasswordAccepted(true);
-	else
-	{
-		c.setPasswordAccepted(false);
-		c.queueMessage(":server 464 :Password incorrect\r\n");
-		updatePollOutEvent(fd, true);
-		return 0;
-	}
-	return 1;
-}
-
-int Server::NICK_command(Client &c, std::string &param, int fd)
-{
-	if (param.empty())
-	{
-		c.queueMessage(":server 431 NICK :No nickname given\r\n");
-		updatePollOutEvent(fd, true);
-		return 1;
-	}
-	for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
-	{
-   		if (it->first != fd && it->second.getNickname() == param)
-		{
-       		c.queueMessage(":server 433 * " + param + " :Nickname is already in use\r\n");
-       		updatePollOutEvent(fd, true);
-       		return 1;
-   		}
-	}
-	c.setNickname(param);
-	return 1;
-}
-
-int Server::PING_command(Client &c, std::string &param, int fd)
-{
-	if (param.empty()) 
-	{
-    	c.queueMessage(":server 409 :No origin specified\r\n");
-    	updatePollOutEvent(fd, true);
-    	return 1;
-   	}
-    c.queueMessage("PONG " + param + "\r\n");
-    updatePollOutEvent(fd, true);
-    return 1;
-}
-
 void Server::receiveFromClient(int fd)
 {
 	char buffer[512];
@@ -249,3 +195,68 @@ void Server::run() {
 }
 
 void Server::stop() { _running = false; }
+
+
+/// server hellper for channels
+
+Client* Server::getClient(int fd)
+{
+    std::map<int, Client>::iterator it = _clients.find(fd);
+
+    if (it == _clients.end())
+        return NULL;
+
+    return &it->second;
+}
+
+Client* Server::findClientByNickname(const std::string& nickname)
+{
+    for (std::map<int, Client>::iterator it = _clients.begin();
+         it != _clients.end(); ++it)
+    {
+        if (it->second.getNickname() == nickname)
+            return &it->second;
+    }
+
+    return NULL;
+}
+
+bool Server::nicknameExists(const std::string& nickname) const
+{
+    for (std::map<int, Client>::const_iterator it = _clients.begin();
+         it != _clients.end(); ++it)
+    {
+        if (it->second.getNickname() == nickname)
+            return true;
+    }
+
+    return false;
+}
+
+Channel* Server::getChannel(const std::string& name)
+{
+    std::map<std::string, Channel>::iterator it = _channels.find(name);
+
+    if (it == _channels.end())
+        return NULL;
+
+    return &it->second;
+}
+
+Channel* Server::createChannel(const std::string& name)
+{
+    if (_channels.find(name) != _channels.end())
+        return NULL;
+
+    _channels.insert(std::make_pair(name, Channel(name)));
+
+    return &_channels.find(name)->second;
+}
+
+void Server::removeChannel(const std::string& name)
+{
+    std::map<std::string, Channel>::iterator it = _channels.find(name);
+
+    if (it != _channels.end())
+        _channels.erase(it);
+}
