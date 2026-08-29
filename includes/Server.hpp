@@ -50,9 +50,9 @@ private:
     void setNonBlocking(int fd);
     void addPollFd(int fd, short events);
     void removePollFd(int fd);
-    void updatePollOutEvent(int fd, bool enable);
 
 public:
+    void updatePollOutEvent(int fd, bool enable);
     Client* getClient(int fd);
     Client* findClientByNickname(const std::string& nickname);
     bool nicknameExists(const std::string& nickname) const;

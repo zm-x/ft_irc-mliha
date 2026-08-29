@@ -35,13 +35,17 @@ void Client::appendToInBuffer(const std::string& data)
 
 bool Client::popOneLine(std::string& line)
 {
-    size_t pos = _inBuffer.find("\r\n");
+    size_t pos = _inBuffer.find('\n');
 
     if (pos == std::string::npos)
         return false;
 
     line = _inBuffer.substr(0, pos);
-    _inBuffer.erase(0, pos + 2);
+    _inBuffer.erase(0, pos + 1);
+
+    // remove trailing '\r' if present before '\n'
+    if (!line.empty() && line[line.size() - 1] == '\r')
+        line.erase(line.size() - 1);
 
     return true;
 }
@@ -110,7 +114,6 @@ bool Client::isPasswordAccepted() const
 {
     return _authenticated;
 }
-
 void Client::setPasswordAccepted(bool value)
 {
     _authenticated = value;

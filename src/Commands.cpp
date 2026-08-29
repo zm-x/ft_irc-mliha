@@ -1,45 +1,107 @@
 #include "../includes/Server.hpp"
 #include "../includes/Client.hpp"
 
+
+static void checkAndRegisterClient(Server *server, Client &c, int fd)
+{
+    if (c.isAuthenticated() && !c.getNickname().empty() && !c.getUsername().empty() && !c.isRegistered())
+    {
+        c.setRegistered(true);
+
+        std::string nick = c.getNickname();
+        std::string user = c.getUsername();
+
+        c.queueMessage(":ircserv 001 " + nick + " :Welcome to the Internet Relay Network " + nick + "!" + user + "@localhost\r\n");
+        c.queueMessage(":ircserv 002 " + nick + " :Your host is ircserv, running version 1.0\r\n");
+        c.queueMessage(":ircserv 003 " + nick + " :This server was created today\r\n");
+        c.queueMessage(":ircserv 004 " + nick + " ircserv 1.0 o itkol\r\n");
+
+        server->updatePollOutEvent(fd, true);
+    }
+}
+
 int Server::PASS_command(Client &c, std::string &param, int fd)
 {
-	if (param.empty())
-	{
-		c.queueMessage(":server 461 PASS :Not enough parameters\r\n");
-		updatePollOutEvent(fd, true);
-		return 1;
-	}
-	if (param == _password)
-		c.setPasswordAccepted(true);
-	else
-	{
-		c.setPasswordAccepted(false);
-		c.queueMessage(":server 464 :Password incorrect\r\n");
-		updatePollOutEvent(fd, true);
-		return 0;
-	}
-	return 1;
+    if (c.isRegistered())
+    {
+        c.queueMessage(":ircserv 462 " + (c.getNickname().empty() ? "*" : c.getNickname()) + " :Unauthorized command (already registered)\r\n");
+        updatePollOutEvent(fd, true);
+        return 1;
+    }
+
+    if (param.empty())
+    {
+        c.queueMessage(":ircserv 461 * PASS :Not enough parameters\r\n");
+        updatePollOutEvent(fd, true);
+        return 1;
+    }
+
+    // remove leading ':' from password if present
+    if (param[0] == ':')
+        param.erase(0, 1);
+
+    if (param == _password)
+    {
+        c.setPasswordAccepted(true);
+    }
+    else
+    {
+        c.setPasswordAccepted(false);
+        c.queueMessage(":ircserv 464 * :Password incorrect\r\n");
+        updatePollOutEvent(fd, true);
+        return 0;
+    }
+    return 1;
 }
 
 int Server::NICK_command(Client &c, std::string &param, int fd)
 {
-	if (param.empty())
-	{
-		c.queueMessage(":server 431 NICK :No nickname given\r\n");
-		updatePollOutEvent(fd, true);
-		return 1;
-	}
-	for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
-	{
-   		if (it->first != fd && it->second.getNickname() == param)
-		{
-       		c.queueMessage(":server 433 * " + param + " :Nickname is already in use\r\n");
-       		updatePollOutEvent(fd, true);
-       		return 1;
-   		}
-	}
-	c.setNickname(param);
-	return 1;
+    if (!c.isAuthenticated())
+    {
+        c.queueMessage(":ircserv 451 * :You have not registered (password required)\r\n");
+        updatePollOutEvent(fd, true);
+        return 1;
+    }
+
+    if (param.empty())
+    {
+        c.queueMessage(":ircserv 431 " + (c.getNickname().empty() ? "*" : c.getNickname()) + " :No nickname given\r\n");
+        updatePollOutEvent(fd, true);
+        return 1;
+    }
+
+    // extract the nickname and strip leading spaces or ':'
+    std::istringstream iss(param);
+    std::string newNick;
+    iss >> newNick;
+    if (!newNick.empty() && newNick[0] == ':')
+        newNick.erase(0, 1);
+
+    // التحقق من تكرار الاسم في السيرفر
+    for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
+    {
+        if (it->first != fd && it->second.getNickname() == newNick)
+        {
+            c.queueMessage(":ircserv 433 " + (c.getNickname().empty() ? "*" : c.getNickname()) + " " + newNick + " :Nickname is already in use\r\n");
+            updatePollOutEvent(fd, true);
+            return 1;
+        }
+    }
+
+    // إذا كان العميل مسجلاً مسبقاً ويقوم بتغيير اسمه: بث التغيير
+    if (c.isRegistered())
+    {
+        std::string nickChangeMsg = ":" + c.getNickname() + "!" + c.getUsername() + "@localhost NICK :" + newNick + "\r\n";
+        c.queueMessage(nickChangeMsg);
+        updatePollOutEvent(fd, true);
+    }
+
+    c.setNickname(newNick);
+
+    // التحقق من اكتمال التسجيل (في حال أرسل USER قبل NICK)
+    checkAndRegisterClient(this, c, fd);
+
+    return 1;
 }
 
 int Server::JOIN_command(Client &c, std::string &param, int fd)
@@ -786,51 +848,45 @@ int Server::TOPIC_command(Client &c, std::string &param, int fd)
 
 int Server::USER_command(Client &c, std::string &param, int fd)
 {
-    // check the password
     if (!c.isAuthenticated())
-	{
+    {
         c.queueMessage(":server 451 * :You have not registered (password required)\r\n");
         updatePollOutEvent(fd, true);
         return 1;
     }
-    // check if he already registered
     if (c.isRegistered())
-	{
+    {
         c.queueMessage(":server 462 " + c.getNickname() + " :Unauthorized command (already registered)\r\n");
         updatePollOutEvent(fd, true);
         return 1;
     }
-    if (param.empty())
-	{
-        c.queueMessage(":server 461 " + (c.getNickname().empty() ? "*" : c.getNickname()) + " USER :Not enough parameters\r\n");
-        updatePollOutEvent(fd, true);
-        return 1;
-    }
-    //split arguments
+
     std::istringstream iss(param);
-    std::string username, mode, unused, realname;
+    std::string username, mode, unused;
     iss >> username >> mode >> unused;
-    //get realname without ": "
-    size_t colonPos = param.find(" :");
-    if (colonPos != std::string::npos)
-	{
-        realname = param.substr(colonPos + 2);
-    } else
-	{
+
+    // find ':' anywhere after the three parameters
+    std::string realname = "";
+    size_t colonPos = param.find(':');
+    if (colonPos != std::string::npos) {
+        realname = param.substr(colonPos + 1);
+    } else {
         iss >> realname;
     }
-    //check if there all 4 arguments
+
     if (username.empty() || mode.empty() || unused.empty() || realname.empty())
-	{
+    {
         c.queueMessage(":server 461 " + (c.getNickname().empty() ? "*" : c.getNickname()) + " USER :Not enough parameters\r\n");
         updatePollOutEvent(fd, true);
         return 1;
     }
+
     c.setUsername(username);
     c.setRealname(realname);
-    // complete the registration
-    if (!c.getNickname().empty())
-	{
+
+    // complete registration if NICK was already set
+    if (!c.getNickname().empty() && !c.isRegistered())
+    {
         c.setRegistered(true);
         std::string welcome = ":server 001 " + c.getNickname() + " :Welcome to the IRC Network " 
                             + c.getNickname() + "!" + c.getUsername() + "@localhost\r\n";

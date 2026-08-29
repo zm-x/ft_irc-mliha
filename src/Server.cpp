@@ -92,40 +92,76 @@ void Server::acceptNewClients() {
 
 void Server::receiveFromClient(int fd)
 {
-	char buffer[512];
-	ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
-	if (n <= 0)
-	{
-		if (n == 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
-			disconnectClient(fd);
-		return;
-	}
-	Client& c = _clients[fd];
-	c.appendToInBuffer(std::string(buffer, n));
+    char buffer[512];
+    ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
+    if (n <= 0)
+    {
+        if (n == 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
+            disconnectClient(fd);
+        return;
+    }
+    Client& c = _clients[fd];
+    c.appendToInBuffer(std::string(buffer, n));
 
-	std::string line;
-	while (c.popOneLine(line)) 
-	{
-		size_t SpacePos = line.find(' ');
-		std::string param;
-		std::string cmd;
-		int return_value;
-		if (SpacePos != std::string::npos)
-		{
-			param = line.substr(SpacePos + 1);
-			cmd = line.substr(0, SpacePos);
-		}
-		if (cmd.empty())
-			continue;
-		if (cmd == "PASS")
-			return_value = PASS_command(c, param, fd);
-		else if (cmd == "NICK")
-			return_value = NICK_command(c, param, fd);
-		else if (cmd == "PING")
-			return_value = PING_command(c, param, fd);
-		if (!return_value)
-			return;
-	}
+    std::string line;
+    while (c.popOneLine(line)) 
+    {
+        if (line.empty())
+            continue;
+
+        size_t spacePos = line.find(' ');
+        std::string cmd;
+        std::string param = "";
+
+        if (spacePos != std::string::npos)
+        {
+            cmd = line.substr(0, spacePos);
+			// skip extra spaces between command and parameters
+			size_t paramStart = line.find_first_not_of(' ', spacePos);
+            if (paramStart != std::string::npos)
+                param = line.substr(paramStart);
+        }
+        else
+        {
+            cmd = line;
+        }
+
+        if (cmd.empty())
+            continue;
+
+        int return_value = 1;
+
+        if (cmd == "PASS")
+            return_value = PASS_command(c, param, fd);
+        else if (cmd == "NICK")
+            return_value = NICK_command(c, param, fd);
+        else if (cmd == "USER")
+            return_value = USER_command(c, param, fd);
+        else if (cmd == "PING")
+            return_value = PING_command(c, param, fd);
+        else if (cmd == "JOIN")
+            return_value = JOIN_command(c, param, fd);
+        else if (cmd == "PRIVMSG")
+            return_value = PRIVMSG_command(c, param, fd);
+        else if (cmd == "QUIT")
+            return_value = QUIT_command(c, param, fd);
+        else if (cmd == "KICK")
+            return_value = KICK_command(c, param, fd);
+        else if (cmd == "MODE")
+            return_value = MODE_command(c, param, fd);
+        else if (cmd == "TOPIC")
+            return_value = TOPIC_command(c, param, fd);
+        else if (cmd == "INVITE")
+            return_value = INVITE_command(c, param, fd);
+        else if (cmd == "PART")
+            return_value = PART_command(c, param, fd);
+
+        if (!return_value)
+        {
+            disconnectClient(fd);
+            return;
+        }
+    }
 }
 
 void Server::sendToClient(int fd) {
