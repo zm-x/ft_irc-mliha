@@ -77,7 +77,6 @@ int Server::NICK_command(Client &c, std::string &param, int fd)
     if (!newNick.empty() && newNick[0] == ':')
         newNick.erase(0, 1);
 
-    // التحقق من تكرار الاسم في السيرفر
     for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
     {
         if (it->first != fd && it->second.getNickname() == newNick)
@@ -88,7 +87,6 @@ int Server::NICK_command(Client &c, std::string &param, int fd)
         }
     }
 
-    // إذا كان العميل مسجلاً مسبقاً ويقوم بتغيير اسمه: بث التغيير
     if (c.isRegistered())
     {
         std::string nickChangeMsg = ":" + c.getNickname() + "!" + c.getUsername() + "@localhost NICK :" + newNick + "\r\n";
@@ -98,7 +96,6 @@ int Server::NICK_command(Client &c, std::string &param, int fd)
 
     c.setNickname(newNick);
 
-    // التحقق من اكتمال التسجيل (في حال أرسل USER قبل NICK)
     checkAndRegisterClient(this, c, fd);
 
     return 1;
