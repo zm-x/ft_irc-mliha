@@ -5,6 +5,18 @@
 #include <vector>
 #include <map>
 #include <poll.h>
+#include <sstream>
+#include <stdexcept>
+#include <iostream>
+#include <cstdlib>
+#include <cstring>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <errno.h>
+#include <set>
 #include "Client.hpp"
 #include "Channel.hpp"
 
@@ -48,10 +60,19 @@ public:
     Channel* getChannel(const std::string& name);
     Channel* createChannel(const std::string& name);
     void removeChannel(const std::string& name);
-    //cpmmands
+    
     int PASS_command(Client &c, std::string &param, int fd);
 	int NICK_command(Client &c, std::string &param, int fd);
 	int PING_command(Client &c, std::string &param, int fd);
+    int TOPIC_command(Client &c, std::string &param, int fd);
+    int USER_command(Client &c, std::string &param, int fd);
+    int JOIN_command(Client &c, std::string &param, int fd);
+    int PRIVMSG_command(Client &c, std::string &param, int fd);
+    int QUIT_command(Client &c, std::string &param, int fd);
+    int KICK_command(Client &c, std::string &param, int fd);
+    int MODE_command(Client &c, std::string &param, int fd);
+    int INVITE_command(Client &c, std::string &param, int fd);
+    int PART_command(Client &c, std::string &param, int fd);
 };
 
 #endif

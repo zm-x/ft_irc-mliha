@@ -44,6 +44,9 @@ public:
 
     void setAuthenticated(bool value);
     void setRegistered(bool value);
+
+    bool isPasswordAccepted() const;
+    void setPasswordAccepted(bool value);
 };
 
 #endif

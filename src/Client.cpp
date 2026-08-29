@@ -105,3 +105,13 @@ void Client::setRegistered(bool value)
 {
     _registered = value;
 }
+
+bool Client::isPasswordAccepted() const
+{
+    return _authenticated;
+}
+
+void Client::setPasswordAccepted(bool value)
+{
+    _authenticated = value;
+}

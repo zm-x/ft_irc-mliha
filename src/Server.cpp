@@ -1,14 +1,4 @@
 #include "../includes/Server.hpp"
-#include <stdexcept>
-#include <iostream>
-#include <cstdlib>
-#include <cstring>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <errno.h>
 
 Server::Server(int port, const std::string& password)
 	: _listenFd(-1), _port(port), _password(password), _running(false) {}
@@ -116,7 +106,7 @@ void Server::receiveFromClient(int fd)
 	std::string line;
 	while (c.popOneLine(line)) 
 	{
-		int SpacePos = line.find(' ');
+		size_t SpacePos = line.find(' ');
 		std::string param;
 		std::string cmd;
 		int return_value;
