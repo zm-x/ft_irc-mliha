@@ -155,6 +155,11 @@ void Server::receiveFromClient(int fd)
             return_value = INVITE_command(c, param, fd);
         else if (cmd == "PART")
             return_value = PART_command(c, param, fd);
+		else
+		{
+			c.queueMessage(":ircserv 421 " + c.getNickname() + " " + cmd + " :Unknown command\r\n");
+			updatePollOutEvent(fd, true);
+		}
 
         if (!return_value)
         {
