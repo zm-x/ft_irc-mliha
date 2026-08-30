@@ -16,6 +16,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <cctype>
 #include <set>
 #include "Client.hpp"
 #include "Channel.hpp"

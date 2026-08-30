@@ -46,12 +46,39 @@ int Server::PASS_command(Client &c, std::string &param, int fd)
     }
     else
     {
-        c.setPasswordAccepted(false);
         c.queueMessage(":ircserv 464 * :Password incorrect\r\n");
         updatePollOutEvent(fd, true);
-        return 0;
+        return 1;
     }
     return 1;
+}
+
+static bool isValidNickname(const std::string &nick)
+{
+    // Check length: nicknames cannot be empty or excessively long (RFC standard is max 9)
+    if (nick.empty() || nick.length() > 9)
+        return false;
+    // Disallowed characters anywhere in the nickname
+    const std::string forbiddenChars = " ,*?!@.#:$\r\n";
+    if (nick.find_first_of(forbiddenChars) != std::string::npos)
+        return false;
+    // First character cannot be a digit, hyphen, or channel prefix
+    if (std::isdigit(static_cast<unsigned char>(nick[0])) || nick[0] == '-' || nick[0] == '#' || nick[0] == '&')
+        return false;
+    // Allowed special characters in IRC nicknames
+    const std::string allowedSpecial = "[]\\`_^{|}";
+    // Validate each character
+    for (size_t i = 0; i < nick.length(); ++i)
+    {
+        char ch = nick[i];
+        if (!std::isalnum(static_cast<unsigned char>(ch)) && 
+            ch != '-' && 
+            allowedSpecial.find(ch) == std::string::npos)
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 int Server::NICK_command(Client &c, std::string &param, int fd)
@@ -62,22 +89,36 @@ int Server::NICK_command(Client &c, std::string &param, int fd)
         updatePollOutEvent(fd, true);
         return 1;
     }
-
     if (param.empty())
     {
         c.queueMessage(":ircserv 431 " + (c.getNickname().empty() ? "*" : c.getNickname()) + " :No nickname given\r\n");
         updatePollOutEvent(fd, true);
         return 1;
     }
-
-    // extract the nickname and strip leading spaces or ':'
+    // Extract the nickname and strip leading spaces or ':'
     std::istringstream iss(param);
     std::string newNick;
     iss >> newNick;
     if (!newNick.empty() && newNick[0] == ':')
         newNick.erase(0, 1);
-
-    // التحقق من تكرار الاسم في السيرفر
+    // If nickname is empty after stripping ':' (e.g. "NICK :")
+    if (newNick.empty())
+    {
+        c.queueMessage(":ircserv 431 " + (c.getNickname().empty() ? "*" : c.getNickname()) + " :No nickname given\r\n");
+        updatePollOutEvent(fd, true);
+        return 1;
+    }
+    // If the user requests the exact same nickname they already have
+    if (c.isRegistered() && c.getNickname() == newNick)
+        return 1;
+    // Validate nickname format and syntax
+    if (!isValidNickname(newNick))
+    {
+        c.queueMessage(":ircserv 432 " + (c.getNickname().empty() ? "*" : c.getNickname()) + " " + newNick + " :Erroneous nickname\r\n");
+        updatePollOutEvent(fd, true);
+        return 1;
+    }
+    // Check if the nickname is already in use by another client
     for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
     {
         if (it->first != fd && it->second.getNickname() == newNick)
@@ -87,20 +128,19 @@ int Server::NICK_command(Client &c, std::string &param, int fd)
             return 1;
         }
     }
-
-    // إذا كان العميل مسجلاً مسبقاً ويقوم بتغيير اسمه: بث التغيير
+    // If the client is already registered and changing their nickname, broadcast the change
     if (c.isRegistered())
     {
         std::string nickChangeMsg = ":" + c.getNickname() + "!" + c.getUsername() + "@localhost NICK :" + newNick + "\r\n";
-        c.queueMessage(nickChangeMsg);
-        updatePollOutEvent(fd, true);
+        for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
+        {
+            it->second.queueMessage(nickChangeMsg);
+            updatePollOutEvent(it->first, true);
+        }
     }
-
     c.setNickname(newNick);
-
-    // التحقق من اكتمال التسجيل (في حال أرسل USER قبل NICK)
+    // Check if registration requirements are met (if USER was sent before NICK)
     checkAndRegisterClient(this, c, fd);
-
     return 1;
 }
 
@@ -124,9 +164,8 @@ int Server::JOIN_command(Client &c, std::string &param, int fd)
     std::string channelName, key;
     size_t spacePos = param.find(' ');
     if (spacePos == std::string::npos)
-	{
         channelName = param;
-    } else
+    else
 	{
         channelName = param.substr(0, spacePos);
         key = param.substr(spacePos + 1);
@@ -153,7 +192,8 @@ int Server::JOIN_command(Client &c, std::string &param, int fd)
             updatePollOutEvent(fd, true);
             return 1;
         }
-    } else
+    }
+    else
 	{
         // check if the user already memeber in the channel
         if (ch->hasMember(fd))
@@ -181,7 +221,6 @@ int Server::JOIN_command(Client &c, std::string &param, int fd)
             return 1;
         }
     }
-    // 
     ch->addMember(fd);
     if (ch->isInvited(fd))
         ch->removeInvite(fd);
@@ -233,13 +272,13 @@ int Server::JOIN_command(Client &c, std::string &param, int fd)
 int Server::KICK_command(Client &c, std::string &param, int fd)
 {
     if (!c.isRegistered())
-	{
+    {
         c.queueMessage(":ircserv 451 " + (c.getNickname().empty() ? "*" : c.getNickname()) + " :You have not registered\r\n");
         updatePollOutEvent(fd, true);
         return 1;
     }
     if (param.empty())
-	{
+    {
         c.queueMessage(":ircserv 461 " + c.getNickname() + " KICK :Not enough parameters\r\n");
         updatePollOutEvent(fd, true);
         return 1;
@@ -248,69 +287,70 @@ int Server::KICK_command(Client &c, std::string &param, int fd)
     std::string channelName, targetNick;
     iss >> channelName >> targetNick;
     if (channelName.empty() || targetNick.empty())
-	{
+    {
         c.queueMessage(":ircserv 461 " + c.getNickname() + " KICK :Not enough parameters\r\n");
         updatePollOutEvent(fd, true);
         return 1;
     }
-
-    //get kick reason
-	//default kick reason is name of the unwanted member
+    // Extract kick reason: default is kicker's nickname
     std::string reason = c.getNickname();
-    size_t colonPos = param.find(" :");
+    size_t colonPos = param.find(':');
     if (colonPos != std::string::npos)
-        reason = param.substr(colonPos + 2);
-	else
-	{
+    {
+        reason = param.substr(colonPos + 1);
+    }
+    else
+    {
         std::string thirdWord;
         if (iss >> thirdWord)
             reason = thirdWord;
     }
-    //check if the channel exist
+    // Check if channel exists
     Channel *ch = getChannel(channelName);
     if (!ch)
-	{
+    {
         c.queueMessage(":ircserv 403 " + c.getNickname() + " " + channelName + " :No such channel\r\n");
         updatePollOutEvent(fd, true);
         return 1;
     }
-    // check if the kicker in the channel
+    // Check if the kicker is in the channel
     if (!ch->hasMember(fd))
-	{
+    {
         c.queueMessage(":ircserv 442 " + c.getNickname() + " " + channelName + " :You're not on that channel\r\n");
         updatePollOutEvent(fd, true);
         return 1;
     }
-    // check if the kicker is admin
+    // Check if the kicker is an operator
     if (!ch->isOperator(fd))
-	{
+    {
         c.queueMessage(":ircserv 482 " + c.getNickname() + " " + channelName + " :You're not channel operator\r\n");
         updatePollOutEvent(fd, true);
         return 1;
     }
-    // check if the unwanted member in the channel
+    // Check if the target member exists and is on the channel
     Client *targetClient = findClientByNickname(targetNick);
     if (!targetClient || !ch->hasMember(targetClient->getFd()))
-	{
+    {
         c.queueMessage(":ircserv 441 " + c.getNickname() + " " + targetNick + " " + channelName + " :They aren't on that channel\r\n");
         updatePollOutEvent(fd, true);
         return 1;
     }
-    //prepar for to broadcast kick message to the channel members including the unwanted member
+    // Broadcast kick message to all channel members including the kicked member
     std::string kickMsg = ":" + c.getNickname() + "!" + c.getUsername() + "@localhost KICK " + channelName + " " + targetNick + " :" + reason + "\r\n";
     const std::vector<int> &members = ch->getMembers();
     for (size_t i = 0; i < members.size(); ++i)
-	{
+    {
         Client *member = getClient(members[i]);
         if (member)
-		{
+        {
             member->queueMessage(kickMsg);
             updatePollOutEvent(members[i], true);
         }
     }
-    // remove the unwanted member
+    // Remove the member from the channel
     ch->removeMember(targetClient->getFd());
-    // delete channel if it became empty
+
+    // Delete channel if it became empty
     if (ch->getMembers().empty())
         _channels.erase(channelName);
 
@@ -885,14 +925,7 @@ int Server::USER_command(Client &c, std::string &param, int fd)
     c.setRealname(realname);
 
     // complete registration if NICK was already set
-    if (!c.getNickname().empty() && !c.isRegistered())
-    {
-        c.setRegistered(true);
-        std::string welcome = ":server 001 " + c.getNickname() + " :Welcome to the IRC Network " 
-                            + c.getNickname() + "!" + c.getUsername() + "@localhost\r\n";
-        c.queueMessage(welcome);
-        updatePollOutEvent(fd, true);
-    }
+    checkAndRegisterClient(this, c, fd);
     return 1;
 }
 
